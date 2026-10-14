@@ -47,7 +47,7 @@ public class InMemoryLinkService : ILinkService
 
     public Task<LinkResponse?> GetByCodeAsync(string code, string baseUrl, CancellationToken ct = default)
     {
-        if (LinksByCode.TryGetValue(code, out var entity) && entity.IsActive)
+        if (LinksByCode.TryGetValue(code, out var entity))
         {
             var startOfToday = DateTime.UtcNow.Date;
             var clicksToday = ClickEvents.Count(x => x.ShortLinkId == entity.Id && x.ClickedAt >= startOfToday);
@@ -61,7 +61,6 @@ public class InMemoryLinkService : ILinkService
     {
         var startOfToday = DateTime.UtcNow.Date;
         var responses = LinksByCode.Values
-            .Where(x => x.IsActive)
             .OrderByDescending(x => x.CreatedAt)
             .Select(x =>
             {
@@ -70,6 +69,30 @@ public class InMemoryLinkService : ILinkService
             });
 
         return Task.FromResult(responses);
+    }
+
+    public Task<LinkResponse?> UpdateAsync(string code, UpdateLinkRequest request, string baseUrl, CancellationToken ct = default)
+    {
+        if (LinksByCode.TryGetValue(code, out var entity))
+        {
+            entity.OriginalUrl = request.OriginalUrl;
+            entity.Title = request.Title;
+            entity.Campaign = request.Campaign;
+            entity.IsActive = request.IsActive;
+            entity.UpdatedAt = DateTime.UtcNow;
+
+            var startOfToday = DateTime.UtcNow.Date;
+            var clicksToday = ClickEvents.Count(x => x.ShortLinkId == entity.Id && x.ClickedAt >= startOfToday);
+            return Task.FromResult<LinkResponse?>(ToResponse(entity, baseUrl, clicksToday));
+        }
+
+        return Task.FromResult<LinkResponse?>(null);
+    }
+
+    public Task<bool> DeleteAsync(string code, CancellationToken ct = default)
+    {
+        var removed = LinksByCode.TryRemove(code, out _);
+        return Task.FromResult(removed);
     }
 
     public Task<string?> RecordClickAndGetRedirectUrlAsync(

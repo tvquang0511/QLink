@@ -9,7 +9,6 @@ namespace QLink.Api.Services;
 
 /// <summary>
 /// Nghiệp vụ quản lý Link sử dụng Entity Framework Core và PostgreSQL.
-/// Sử dụng AsNoTracking cho các truy vấn đọc để tối ưu hiệu năng.
 /// </summary>
 public class LinkService : ILinkService
 {
@@ -29,7 +28,6 @@ public class LinkService : ILinkService
         string code = string.Empty;
         var maxRetries = 3;
 
-        // Sinh mã ngẫu nhiên và kiểm tra trùng lặp
         for (int i = 0; i < maxRetries; i++)
         {
             code = _codeGenerator.Generate(7);
@@ -61,7 +59,7 @@ public class LinkService : ILinkService
     {
         var link = await _db.Links
             .AsNoTracking()
-            .FirstOrDefaultAsync(x => x.Code == code && x.IsActive, ct);
+            .FirstOrDefaultAsync(x => x.Code == code, ct);
 
         if (link is null) return null;
 
@@ -77,10 +75,8 @@ public class LinkService : ILinkService
     {
         var startOfToday = DateTime.UtcNow.Date;
 
-        // Lấy danh sách link kèm số click hôm nay
         var links = await _db.Links
             .AsNoTracking()
-            .Where(x => x.IsActive)
             .OrderByDescending(x => x.CreatedAt)
             .Select(link => new
             {
@@ -90,6 +86,44 @@ public class LinkService : ILinkService
             .ToListAsync(ct);
 
         return links.Select(item => ToResponse(item.Link, baseUrl, item.ClicksToday));
+    }
+
+    public async Task<LinkResponse?> UpdateAsync(string code, UpdateLinkRequest request, string baseUrl, CancellationToken ct = default)
+    {
+        var link = await _db.Links
+            .FirstOrDefaultAsync(x => x.Code == code, ct);
+
+        if (link is null) return null;
+
+        link.OriginalUrl = request.OriginalUrl;
+        link.Title = request.Title;
+        link.Campaign = request.Campaign;
+        link.IsActive = request.IsActive;
+        link.UpdatedAt = DateTime.UtcNow;
+
+        await _db.SaveChangesAsync(ct);
+
+        var startOfToday = DateTime.UtcNow.Date;
+        var clicksToday = await _db.ClickEvents
+            .AsNoTracking()
+            .CountAsync(x => x.ShortLinkId == link.Id && x.ClickedAt >= startOfToday, ct);
+
+        _logger.LogInformation("Updated link {Code}", code);
+        return ToResponse(link, baseUrl, clicksToday);
+    }
+
+    public async Task<bool> DeleteAsync(string code, CancellationToken ct = default)
+    {
+        var link = await _db.Links
+            .FirstOrDefaultAsync(x => x.Code == code, ct);
+
+        if (link is null) return false;
+
+        _db.Links.Remove(link);
+        await _db.SaveChangesAsync(ct);
+
+        _logger.LogInformation("Deleted link {Code}", code);
+        return true;
     }
 
     public async Task<string?> RecordClickAndGetRedirectUrlAsync(
@@ -109,11 +143,9 @@ public class LinkService : ILinkService
             return null;
         }
 
-        // 1. Tăng bộ đếm tổng click
         link.ClickCount++;
         link.UpdatedAt = DateTime.UtcNow;
 
-        // 2. Ghi nhận sự kiện click chi tiết (Audit & Daily Analytics)
         var clickEvent = new ClickEvent
         {
             Id = Guid.NewGuid(),

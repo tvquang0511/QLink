@@ -8,6 +8,8 @@ public interface ILinkService
     Task<LinkResponse> CreateAsync(CreateLinkRequest request, string baseUrl, CancellationToken ct = default);
     Task<LinkResponse?> GetByCodeAsync(string code, string baseUrl, CancellationToken ct = default);
     Task<IEnumerable<LinkResponse>> GetAllAsync(string baseUrl, CancellationToken ct = default);
+    Task<LinkResponse?> UpdateAsync(string code, UpdateLinkRequest request, string baseUrl, CancellationToken ct = default);
+    Task<bool> DeleteAsync(string code, CancellationToken ct = default);
     Task<string?> RecordClickAndGetRedirectUrlAsync(
         string code,
         string? referer,

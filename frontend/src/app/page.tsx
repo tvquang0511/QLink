@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import {
   checkBackendHealth,
   createShortLink,
+  updateShortLink,
+  deleteShortLink,
   getAllLinks,
   getLinkStats,
   LinkResponse,
@@ -12,19 +14,32 @@ import {
 } from "@/lib/api";
 
 export default function Home() {
+  // Form State: Create
   const [url, setUrl] = useState("");
   const [title, setTitle] = useState("");
   const [campaign, setCampaign] = useState("");
+  const [createLoading, setCreateLoading] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+
+  // Links List
   const [links, setLinks] = useState<LinkResponse[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
 
-  // Selected link for Stats Modal
-  const [selectedStats, setSelectedStats] = useState<LinkStatsResponse | null>(null);
+  // Edit Modal State
+  const [editingLink, setEditingLink] = useState<LinkResponse | null>(null);
+  const [editUrl, setEditUrl] = useState("");
+  const [editTitle, setEditTitle] = useState("");
+  const [editCampaign, setEditCampaign] = useState("");
+  const [editIsActive, setEditIsActive] = useState(true);
+  const [editLoading, setEditLoading] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+
+  // Stats Modal State
+  const [statsData, setStatsData] = useState<LinkStatsResponse | null>(null);
   const [statsLoading, setStatsLoading] = useState(false);
   const [statsError, setStatsError] = useState<string | null>(null);
 
+  // Backend Health Status
   const [backendHealth, setBackendHealth] = useState<{
     ok: boolean;
     data?: HealthResponse;
@@ -52,12 +67,13 @@ export default function Home() {
     return () => clearInterval(interval);
   }, []);
 
-  const handleShorten = async (e: React.FormEvent) => {
+  // Handle Create Link
+  const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!url.trim()) return;
 
-    setLoading(true);
-    setError(null);
+    setCreateLoading(true);
+    setFormError(null);
 
     try {
       const newLink = await createShortLink({
@@ -71,13 +87,81 @@ export default function Home() {
       setTitle("");
       setCampaign("");
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : "Đã có lỗi xảy ra khi tạo link.";
-      setError(message);
+      const message = err instanceof Error ? err.message : "Đã có lỗi xảy ra khi tạo liên kết.";
+      setFormError(message);
     } finally {
-      setLoading(false);
+      setCreateLoading(false);
     }
   };
 
+  // Open Edit Modal
+  const openEditModal = (link: LinkResponse) => {
+    setEditingLink(link);
+    setEditUrl(link.originalUrl);
+    setEditTitle(link.title || "");
+    setEditCampaign(link.campaign || "");
+    setEditIsActive(link.isActive);
+    setEditError(null);
+  };
+
+  // Handle Save Edit
+  const handleSaveEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingLink || !editUrl.trim()) return;
+
+    setEditLoading(true);
+    setEditError(null);
+
+    try {
+      const updated = await updateShortLink(editingLink.code, {
+        originalUrl: editUrl.trim(),
+        title: editTitle.trim() || undefined,
+        campaign: editCampaign.trim() || undefined,
+        isActive: editIsActive,
+      });
+
+      setLinks((prev) => prev.map((item) => (item.code === updated.code ? updated : item)));
+      setEditingLink(null);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Không thể cập nhật liên kết.";
+      setEditError(message);
+    } finally {
+      setEditLoading(false);
+    }
+  };
+
+  // Handle Delete Link
+  const handleDelete = async (code: string) => {
+    const confirmDelete = window.confirm("Bạn có chắc chắn muốn xóa liên kết này không?");
+    if (!confirmDelete) return;
+
+    try {
+      await deleteShortLink(code);
+      setLinks((prev) => prev.filter((item) => item.code !== code));
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Xóa liên kết thất bại.";
+      alert(message);
+    }
+  };
+
+  // Open Stats Modal
+  const openStatsModal = async (code: string) => {
+    setStatsLoading(true);
+    setStatsError(null);
+    setStatsData(null);
+
+    try {
+      const stats = await getLinkStats(code, 7);
+      setStatsData(stats);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Không thể tải số liệu thống kê.";
+      setStatsError(message);
+    } finally {
+      setStatsLoading(false);
+    }
+  };
+
+  // Copy to clipboard
   const copyToClipboard = async (text: string, code: string) => {
     try {
       await navigator.clipboard.writeText(text);
@@ -88,406 +172,503 @@ export default function Home() {
     }
   };
 
-  const openStatsModal = async (code: string) => {
-    setStatsLoading(true);
-    setStatsError(null);
-    setSelectedStats(null);
-
-    try {
-      const stats = await getLinkStats(code, 7);
-      setSelectedStats(stats);
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : "Không thể tải thống kê.";
-      setStatsError(message);
-    } finally {
-      setStatsLoading(false);
-    }
-  };
-
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 selection:bg-indigo-500 selection:text-white">
-      {/* Background Glow */}
-      <div className="fixed inset-0 pointer-events-none overflow-hidden">
-        <div className="absolute -top-40 -left-40 w-96 h-96 bg-indigo-600/20 rounded-full blur-3xl" />
-        <div className="absolute top-1/3 -right-40 w-96 h-96 bg-violet-600/20 rounded-full blur-3xl" />
-      </div>
-
-      <div className="relative max-w-5xl mx-auto px-4 py-12 sm:px-6 lg:px-8">
-        {/* Header Bar */}
-        <header className="flex flex-col sm:flex-row items-start sm:items-center justify-between pb-8 border-b border-slate-800/80 gap-4">
+    <div className="min-h-screen bg-slate-50 text-slate-900 font-sans selection:bg-blue-600 selection:text-white">
+      {/* Top Header */}
+      <header className="bg-white border-b border-slate-200 sticky top-0 z-30">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-xl bg-gradient-to-tr from-indigo-500 to-violet-500 flex items-center justify-center font-bold text-xl shadow-lg shadow-indigo-500/30 text-white">
+            <div className="h-9 w-9 rounded-lg bg-blue-600 text-white font-bold flex items-center justify-center text-lg tracking-wider">
               Q
             </div>
             <div>
-              <h1 className="text-2xl font-bold tracking-tight text-white flex items-center gap-2">
-                QLink
-                <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 font-medium">
-                  MVP Live
+              <div className="flex items-center gap-2">
+                <span className="font-bold text-xl text-slate-900 tracking-tight">QLink</span>
+                <span className="text-xs px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 font-medium border border-blue-200">
+                  Quản lý & Đo lường
                 </span>
-              </h1>
-              <p className="text-xs text-slate-400">
-                Link Tracking & Daily Click Analytics • ASP.NET Core 9 + PostgreSQL + Next.js
-              </p>
+              </div>
+              <p className="text-xs text-slate-500">Rút gọn liên kết và theo dõi lượt nhấp chuột</p>
             </div>
           </div>
 
-          {/* Backend Status Badge */}
           <div className="flex items-center gap-3">
             <div
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-medium transition-all ${
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium border ${
                 backendHealth.ok
-                  ? "bg-emerald-950/60 border-emerald-500/40 text-emerald-300"
-                  : "bg-amber-950/40 border-amber-500/30 text-amber-300"
+                  ? "bg-emerald-50 text-emerald-800 border-emerald-200"
+                  : "bg-amber-50 text-amber-800 border-amber-200"
               }`}
             >
               <span
                 className={`h-2 w-2 rounded-full ${
-                  backendHealth.ok
-                    ? "bg-emerald-400 animate-pulse"
-                    : "bg-amber-400"
+                  backendHealth.ok ? "bg-emerald-500" : "bg-amber-500"
                 }`}
               />
               {backendHealth.loading && !backendHealth.data
-                ? "Kiểm tra API..."
+                ? "Đang kết nối..."
                 : backendHealth.ok
-                ? `C# API Online (:5102)`
-                : "C# API Offline (Chưa bật)"}
+                ? "Máy chủ: Trực tuyến"
+                : "Máy chủ: Chưa kết nối"}
             </div>
 
             <button
               onClick={fetchHealthAndLinks}
-              title="Làm mới trạng thái kết nối"
-              className="p-1.5 rounded-lg bg-slate-900 border border-slate-800 hover:bg-slate-800 text-slate-400 hover:text-white transition-colors text-xs"
+              className="px-3 py-1.5 text-xs font-medium bg-white hover:bg-slate-100 border border-slate-200 rounded-lg text-slate-700 transition-colors"
             >
-              🔄
+              Làm mới
             </button>
           </div>
-        </header>
+        </div>
+      </header>
 
-        {/* Hero Section */}
-        <div className="text-center my-10">
-          <h2 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-white via-slate-100 to-slate-400">
-            Rút gọn URL & Đo lường Click trong ngày
-          </h2>
-          <p className="mt-3 text-slate-400 max-w-xl mx-auto text-sm sm:text-base">
-            Tạo link chuyển hướng nhanh chóng, theo dõi chính xác lượt nhấp trong ngày và lịch sử truy cập.
+      {/* Main Container */}
+      <main className="max-w-6xl mx-auto px-4 sm:px-6 py-8">
+        {/* Intro */}
+        <div className="mb-8">
+          <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
+            Tạo & Quản Lý Liên Kết Rút Gọn
+          </h1>
+          <p className="text-sm text-slate-600 mt-1">
+            Rút ngắn đường dẫn, tùy biến tiêu đề chiến dịch và kiểm soát lượt nhấp trong ngày chính xác.
           </p>
         </div>
 
-        {/* Input Form Card */}
-        <div className="bg-slate-900/60 backdrop-blur-xl border border-slate-800/90 rounded-2xl p-6 sm:p-8 shadow-2xl shadow-indigo-950/20">
-          <form onSubmit={handleShorten} className="space-y-4">
+        {/* Create Link Card */}
+        <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm mb-8">
+          <h2 className="text-base font-bold text-slate-900 mb-4 pb-2 border-b border-slate-100">
+            Tạo liên kết mới
+          </h2>
+
+          <form onSubmit={handleCreate} className="space-y-4">
             <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-300 mb-2">
-                URL Gốc Cần Rút Gọn <span className="text-rose-400">*</span>
+              <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
+                Đường dẫn gốc <span className="text-red-500">*</span>
               </label>
-              <div className="relative">
-                <input
-                  type="url"
-                  required
-                  placeholder="https://example.com/very-long-url-path..."
-                  value={url}
-                  onChange={(e) => setUrl(e.target.value)}
-                  className="w-full bg-slate-950/90 border border-slate-700/80 rounded-xl px-4 py-3.5 text-sm sm:text-base text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
-                />
-              </div>
+              <input
+                type="url"
+                required
+                placeholder="https://example.com/duong-dan-can-rut-gon"
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-300 rounded-lg px-4 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
+              />
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-300 mb-2">
-                  Tiêu Đề (Tùy chọn)
+                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
+                  Tiêu đề nhận diện (Tùy chọn)
                 </label>
                 <input
                   type="text"
-                  placeholder="Ví dụ: Link Portfolio 2026"
+                  placeholder="Ví dụ: Hồ sơ cá nhân, Bài đăng blog"
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
-                  className="w-full bg-slate-950/90 border border-slate-700/80 rounded-xl px-4 py-2.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
+                  className="w-full bg-slate-50 border border-slate-300 rounded-lg px-4 py-2 text-sm text-slate-900 placeholder-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
                 />
               </div>
+
               <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-300 mb-2">
-                  Chiến Dịch / Campaign (Tùy chọn)
+                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
+                  Chiến dịch / Nguồn (Tùy chọn)
                 </label>
                 <input
                   type="text"
-                  placeholder="Ví dụ: facebook-ads, resume"
+                  placeholder="Ví dụ: facebook, linkedin, newsletter"
                   value={campaign}
                   onChange={(e) => setCampaign(e.target.value)}
-                  className="w-full bg-slate-950/90 border border-slate-700/80 rounded-xl px-4 py-2.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
+                  className="w-full bg-slate-50 border border-slate-300 rounded-lg px-4 py-2 text-sm text-slate-900 placeholder-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
                 />
               </div>
             </div>
 
-            {error && (
-              <div className="p-3 rounded-xl bg-rose-950/60 border border-rose-500/40 text-rose-300 text-sm flex items-center gap-2">
-                <span>⚠️</span>
-                <span>{error}</span>
+            {formError && (
+              <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-xs">
+                {formError}
               </div>
             )}
 
-            <button
-              type="submit"
-              disabled={loading || !url.trim()}
-              className="w-full sm:w-auto px-8 py-3.5 bg-gradient-to-r from-indigo-500 to-violet-600 hover:from-indigo-600 hover:to-violet-700 disabled:opacity-50 text-white font-medium rounded-xl shadow-lg shadow-indigo-600/30 transition-all flex items-center justify-center gap-2 text-sm"
-            >
-              {loading ? (
-                <>
-                  <span className="h-4 w-4 border-2 border-white/20 border-t-white rounded-full animate-spin" />
-                  <span>Đang xử lý...</span>
-                </>
-              ) : (
-                <>
-                  <span>⚡ Rút Gọn Link</span>
-                </>
-              )}
-            </button>
+            <div className="pt-2">
+              <button
+                type="submit"
+                disabled={createLoading || !url.trim()}
+                className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-medium text-sm rounded-lg shadow-sm transition"
+              >
+                {createLoading ? "Đang xử lý..." : "Tạo liên kết rút gọn"}
+              </button>
+            </div>
           </form>
         </div>
 
-        {/* Links List Section */}
-        <div className="mt-12">
+        {/* Links Table / List */}
+        <div>
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-white flex items-center gap-2">
-              <span>📋 Danh sách Link đã tạo</span>
-              <span className="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 font-mono">
+            <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+              <span>Danh sách liên kết</span>
+              <span className="text-xs px-2.5 py-0.5 rounded-full bg-slate-200 text-slate-700 font-semibold font-mono">
                 {links.length}
               </span>
-            </h3>
+            </h2>
 
             {!backendHealth.ok && (
-              <span className="text-xs text-amber-400/90 bg-amber-950/30 px-3 py-1 rounded-md border border-amber-900/40">
-                Tip: Chạy <code className="font-mono text-white">docker compose up -d</code> rồi khởi chạy backend!
+              <span className="text-xs text-amber-700 bg-amber-50 px-3 py-1 rounded-md border border-amber-200">
+                Hãy bật backend API để đồng bộ dữ liệu
               </span>
             )}
           </div>
 
           {links.length === 0 ? (
-            <div className="border border-slate-800/80 rounded-2xl p-10 text-center bg-slate-900/20">
-              <p className="text-slate-400 text-sm">
-                Chưa có liên kết nào. Hãy nhập một URL ở trên để tạo liên kết rút gọn đầu tiên!
+            <div className="bg-white border border-slate-200 rounded-xl p-12 text-center">
+              <p className="text-slate-500 text-sm">
+                Chưa có liên kết nào. Hãy nhập đường dẫn ở trên để tạo liên kết đầu tiên.
               </p>
             </div>
           ) : (
-            <div className="space-y-3">
+            <div className="bg-white border border-slate-200 rounded-xl divide-y divide-slate-100 shadow-sm overflow-hidden">
               {links.map((item) => (
                 <div
                   key={item.id}
-                  className="bg-slate-900/80 border border-slate-800/90 hover:border-slate-700/80 rounded-xl p-4 sm:p-5 transition-all flex flex-col lg:flex-row lg:items-center justify-between gap-4"
+                  className="p-5 hover:bg-slate-50/70 transition-colors flex flex-col lg:flex-row lg:items-center justify-between gap-4"
                 >
-                  <div className="space-y-1 min-w-0 flex-1">
+                  {/* Left Column: Link Info */}
+                  <div className="min-w-0 flex-1 space-y-1.5">
                     <div className="flex items-center gap-2 flex-wrap">
                       <a
                         href={item.shortUrl}
                         target="_blank"
                         rel="noreferrer"
-                        className="font-mono text-base font-semibold text-indigo-400 hover:text-indigo-300 underline decoration-indigo-500/40 underline-offset-4"
+                        className="font-mono text-base font-bold text-blue-600 hover:text-blue-800 hover:underline"
                       >
                         {item.shortUrl}
                       </a>
+
+                      <span
+                        className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${
+                          item.isActive
+                            ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                            : "bg-slate-100 text-slate-600 border border-slate-200"
+                        }`}
+                      >
+                        {item.isActive ? "Hoạt động" : "Tạm dừng"}
+                      </span>
+
                       {item.campaign && (
-                        <span className="text-[11px] px-2 py-0.5 rounded-md bg-slate-800 text-slate-300 border border-slate-700">
+                        <span className="text-[11px] px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200 font-medium">
                           {item.campaign}
                         </span>
                       )}
+
                       {item.title && (
-                        <span className="text-xs text-slate-400 truncate max-w-[200px]">
-                          • {item.title}
+                        <span className="text-xs text-slate-600 truncate max-w-xs">
+                          {item.title}
                         </span>
                       )}
                     </div>
-                    <p className="text-xs text-slate-400 truncate max-w-xl font-mono">
-                      ↳ {item.originalUrl}
-                    </p>
-                    <p className="text-[11px] text-slate-500">
-                      Tạo lúc {new Date(item.createdAt).toLocaleString("vi-VN")}
-                    </p>
+
+                    <div className="text-xs text-slate-500 truncate font-mono">
+                      Gốc: {item.originalUrl}
+                    </div>
+
+                    <div className="text-[11px] text-slate-400">
+                      Tạo ngày {new Date(item.createdAt).toLocaleDateString("vi-VN")} lúc{" "}
+                      {new Date(item.createdAt).toLocaleTimeString("vi-VN")}
+                    </div>
                   </div>
 
+                  {/* Right Column: Click Metrics & Actions */}
                   <div className="flex items-center gap-3 flex-wrap sm:flex-nowrap">
-                    {/* Clicks Today Counter (Highlighted per requirement) */}
-                    <div className="px-3 py-1.5 rounded-lg bg-emerald-950/60 border border-emerald-500/40 text-center min-w-[75px]">
-                      <div className="text-[11px] text-emerald-400 font-medium">Hôm nay</div>
-                      <div className="text-base font-bold text-emerald-300 font-mono">
+                    {/* Clicks Today */}
+                    <div className="px-3 py-1.5 rounded-lg bg-emerald-50 border border-emerald-200 text-center min-w-[75px]">
+                      <div className="text-[10px] uppercase font-bold text-emerald-700 tracking-wider">
+                        Hôm nay
+                      </div>
+                      <div className="text-base font-extrabold text-emerald-800 font-mono">
                         {item.clicksToday ?? 0}
                       </div>
                     </div>
 
-                    {/* Total Clicks counter */}
-                    <div className="px-3 py-1.5 rounded-lg bg-slate-950/80 border border-slate-800 text-center min-w-[75px]">
-                      <div className="text-[11px] text-slate-400">Tổng click</div>
-                      <div className="text-base font-bold text-white font-mono">
+                    {/* Total Clicks */}
+                    <div className="px-3 py-1.5 rounded-lg bg-slate-100 border border-slate-200 text-center min-w-[75px]">
+                      <div className="text-[10px] uppercase font-bold text-slate-600 tracking-wider">
+                        Tổng cộng
+                      </div>
+                      <div className="text-base font-extrabold text-slate-900 font-mono">
                         {item.clickCount}
                       </div>
                     </div>
 
-                    {/* Copy Button */}
-                    <button
-                      onClick={() => copyToClipboard(item.shortUrl, item.code)}
-                      className={`px-3 py-2 rounded-lg border text-xs font-medium transition-all ${
-                        copiedCode === item.code
-                          ? "bg-emerald-600/20 border-emerald-500 text-emerald-300"
-                          : "bg-slate-800/80 border-slate-700 hover:bg-slate-700 text-slate-200"
-                      }`}
-                    >
-                      {copiedCode === item.code ? "✓ Đã chép" : "Sao chép"}
-                    </button>
+                    {/* Actions Group */}
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        onClick={() => copyToClipboard(item.shortUrl, item.code)}
+                        className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition ${
+                          copiedCode === item.code
+                            ? "bg-emerald-600 text-white border-emerald-600"
+                            : "bg-white hover:bg-slate-100 text-slate-700 border-slate-300"
+                        }`}
+                      >
+                        {copiedCode === item.code ? "Đã chép" : "Sao chép"}
+                      </button>
 
-                    {/* View Stats Analytics Modal */}
-                    <button
-                      onClick={() => openStatsModal(item.code)}
-                      className="px-3 py-2 rounded-lg bg-violet-600/20 border border-violet-500/40 hover:bg-violet-600/30 text-violet-300 text-xs font-medium transition-all"
-                    >
-                      📊 Thống kê
-                    </button>
+                      <button
+                        onClick={() => openEditModal(item)}
+                        className="px-3 py-1.5 text-xs font-medium bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded-lg transition"
+                      >
+                        Chỉnh sửa
+                      </button>
 
-                    {/* Direct redirect test button */}
-                    <a
-                      href={item.shortUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="px-3 py-2 rounded-lg bg-indigo-600/20 border border-indigo-500/40 hover:bg-indigo-600/30 text-indigo-300 text-xs font-medium transition-all"
-                    >
-                      Mở Link ↗
-                    </a>
+                      <button
+                        onClick={() => openStatsModal(item.code)}
+                        className="px-3 py-1.5 text-xs font-medium bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-lg transition"
+                      >
+                        Thống kê
+                      </button>
+
+                      <a
+                        href={item.shortUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="px-3 py-1.5 text-xs font-medium bg-slate-800 hover:bg-slate-900 text-white rounded-lg transition"
+                      >
+                        Mở link
+                      </a>
+
+                      <button
+                        onClick={() => handleDelete(item.code)}
+                        className="px-2.5 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 border border-transparent hover:border-red-200 rounded-lg transition"
+                      >
+                        Xóa
+                      </button>
+                    </div>
                   </div>
                 </div>
               ))}
             </div>
           )}
         </div>
+      </main>
 
-        {/* Modal: Detailed Analytics & Daily Clicks */}
-        {(selectedStats || statsLoading || statsError) && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 shadow-2xl relative">
+      {/* Modal: Edit Link */}
+      {editingLink && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs">
+          <div className="bg-white border border-slate-200 rounded-xl max-w-lg w-full p-6 shadow-xl">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
+              <div>
+                <h3 className="font-bold text-lg text-slate-900">Chỉnh sửa liên kết</h3>
+                <span className="font-mono text-xs text-blue-600">{editingLink.shortUrl}</span>
+              </div>
+              <button
+                onClick={() => setEditingLink(null)}
+                className="text-slate-400 hover:text-slate-600 text-sm font-bold p-1"
+              >
+                Đóng
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEdit} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">
+                  Đường dẫn gốc <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="url"
+                  required
+                  value={editUrl}
+                  onChange={(e) => setEditUrl(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-sm text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">
+                  Tiêu đề
+                </label>
+                <input
+                  type="text"
+                  value={editTitle}
+                  onChange={(e) => setEditTitle(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-sm text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">
+                  Chiến dịch / Nguồn
+                </label>
+                <input
+                  type="text"
+                  value={editCampaign}
+                  onChange={(e) => setEditCampaign(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2 text-sm text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              <div className="flex items-center gap-3 pt-1">
+                <input
+                  type="checkbox"
+                  id="activeCheckbox"
+                  checked={editIsActive}
+                  onChange={(e) => setEditIsActive(e.target.checked)}
+                  className="h-4 w-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500"
+                />
+                <label htmlFor="activeCheckbox" className="text-sm font-medium text-slate-700">
+                  Kích hoạt liên kết (Cho phép chuyển hướng)
+                </label>
+              </div>
+
+              {editError && (
+                <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-xs">
+                  {editError}
+                </div>
+              )}
+
+              <div className="flex justify-end gap-2 pt-4 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setEditingLink(null)}
+                  className="px-4 py-2 text-sm font-medium bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded-lg"
+                >
+                  Hủy bỏ
+                </button>
+                <button
+                  type="submit"
+                  disabled={editLoading}
+                  className="px-5 py-2 text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white rounded-lg"
+                >
+                  {editLoading ? "Đang lưu..." : "Lưu thay đổi"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: View Click Stats */}
+      {(statsData || statsLoading || statsError) && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs">
+          <div className="bg-white border border-slate-200 rounded-xl max-w-2xl w-full p-6 shadow-xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
+              <div>
+                <h3 className="font-bold text-lg text-slate-900">Báo cáo lượt nhấp chuột</h3>
+                {statsData && (
+                  <span className="font-mono text-xs text-blue-600">{statsData.shortUrl}</span>
+                )}
+              </div>
               <button
                 onClick={() => {
-                  setSelectedStats(null);
+                  setStatsData(null);
                   setStatsLoading(false);
                   setStatsError(null);
                 }}
-                className="absolute top-4 right-4 text-slate-400 hover:text-white p-1 rounded-lg bg-slate-800 text-xs font-bold"
+                className="text-slate-400 hover:text-slate-600 text-sm font-bold p-1"
               >
-                ✕ Đóng
+                Đóng
               </button>
-
-              {statsLoading && (
-                <div className="py-12 text-center text-slate-400 flex flex-col items-center gap-3">
-                  <span className="h-6 w-6 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
-                  <span>Đang tải số liệu thống kê...</span>
-                </div>
-              )}
-
-              {statsError && (
-                <div className="py-8 text-center text-rose-400 text-sm">
-                  ⚠️ {statsError}
-                </div>
-              )}
-
-              {selectedStats && (
-                <div className="space-y-6">
-                  <div>
-                    <h3 className="text-xl font-bold text-white flex items-center gap-2">
-                      <span>📊 Báo Cáo Lượt Click</span>
-                      <span className="font-mono text-sm px-2.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/40">
-                        {selectedStats.code}
-                      </span>
-                    </h3>
-                    <p className="text-xs text-slate-400 mt-1 truncate">
-                      Đích: {selectedStats.originalUrl}
-                    </p>
-                  </div>
-
-                  {/* Summary metric cards */}
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="p-4 rounded-xl bg-emerald-950/40 border border-emerald-500/30 text-center">
-                      <div className="text-xs text-emerald-400 font-medium">Hôm Nay</div>
-                      <div className="text-3xl font-extrabold text-emerald-300 font-mono mt-1">
-                        {selectedStats.clicksToday}
-                      </div>
-                      <div className="text-[11px] text-slate-400 mt-0.5">lượt truy cập</div>
-                    </div>
-
-                    <div className="p-4 rounded-xl bg-slate-950/80 border border-slate-800 text-center">
-                      <div className="text-xs text-slate-400 font-medium">Tổng Toàn Thời Gian</div>
-                      <div className="text-3xl font-extrabold text-white font-mono mt-1">
-                        {selectedStats.totalClicks}
-                      </div>
-                      <div className="text-[11px] text-slate-400 mt-0.5">lượt truy cập</div>
-                    </div>
-                  </div>
-
-                  {/* Daily breakdown (7 Days) */}
-                  <div>
-                    <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-300 mb-3">
-                      Lịch Sử 7 Ngày Qua
-                    </h4>
-                    <div className="space-y-2">
-                      {selectedStats.dailyClicks.map((point) => {
-                        const maxCount = Math.max(
-                          ...selectedStats.dailyClicks.map((d) => d.clicks),
-                          1
-                        );
-                        const percent = Math.round((point.clicks / maxCount) * 100);
-
-                        return (
-                          <div
-                            key={point.date}
-                            className="flex items-center gap-3 text-xs bg-slate-950/40 p-2 rounded-lg border border-slate-800/60"
-                          >
-                            <span className="w-24 font-mono text-slate-400">{point.date}</span>
-                            <div className="flex-1 bg-slate-800 rounded-full h-3 overflow-hidden">
-                              <div
-                                className="bg-gradient-to-r from-indigo-500 to-emerald-400 h-full rounded-full transition-all duration-500"
-                                style={{ width: `${percent}%` }}
-                              />
-                            </div>
-                            <span className="w-12 text-right font-mono font-bold text-slate-200">
-                              {point.clicks}
-                            </span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  {/* Recent Click Events Log */}
-                  <div>
-                    <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-300 mb-3">
-                      Các Lượt Click Gần Nhất
-                    </h4>
-                    {selectedStats.recentClicks.length === 0 ? (
-                      <p className="text-xs text-slate-500 italic">Chưa có lượt click nào được ghi nhận.</p>
-                    ) : (
-                      <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
-                        {selectedStats.recentClicks.map((rc, idx) => (
-                          <div
-                            key={idx}
-                            className="p-2.5 rounded-lg bg-slate-950/60 border border-slate-800/80 text-[11px] flex items-center justify-between gap-2"
-                          >
-                            <div className="min-w-0 flex-1 truncate">
-                              <span className="text-slate-400">Nguồn: </span>
-                              <span className="text-slate-200 font-mono">
-                                {rc.referer || "Truy cập trực tiếp (Direct)"}
-                              </span>
-                            </div>
-                            <span className="text-slate-400 font-mono whitespace-nowrap">
-                              {new Date(rc.clickedAt).toLocaleTimeString("vi-VN")}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
             </div>
+
+            {statsLoading && (
+              <div className="py-12 text-center text-slate-500 text-sm">
+                Đang tải dữ liệu phân tích...
+              </div>
+            )}
+
+            {statsError && (
+              <div className="py-8 text-center text-red-600 text-sm">
+                {statsError}
+              </div>
+            )}
+
+            {statsData && (
+              <div className="space-y-6">
+                {/* Metric Summary Cards */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-center">
+                    <div className="text-xs uppercase font-bold text-emerald-700 tracking-wider">
+                      Lượt nhấp hôm nay
+                    </div>
+                    <div className="text-3xl font-extrabold text-emerald-800 font-mono mt-1">
+                      {statsData.clicksToday}
+                    </div>
+                    <div className="text-[11px] text-emerald-600 mt-0.5">lượt truy cập</div>
+                  </div>
+
+                  <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 text-center">
+                    <div className="text-xs uppercase font-bold text-slate-600 tracking-wider">
+                      Tổng toàn thời gian
+                    </div>
+                    <div className="text-3xl font-extrabold text-slate-900 font-mono mt-1">
+                      {statsData.totalClicks}
+                    </div>
+                    <div className="text-[11px] text-slate-500 mt-0.5">lượt truy cập</div>
+                  </div>
+                </div>
+
+                {/* 7-day daily breakdown */}
+                <div>
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700 mb-3">
+                    Tần suất theo ngày (7 ngày gần nhất)
+                  </h4>
+                  <div className="space-y-2">
+                    {statsData.dailyClicks.map((point) => {
+                      const maxCount = Math.max(...statsData.dailyClicks.map((d) => d.clicks), 1);
+                      const percent = Math.round((point.clicks / maxCount) * 100);
+
+                      return (
+                        <div
+                          key={point.date}
+                          className="flex items-center gap-3 text-xs bg-slate-50 p-2.5 rounded-lg border border-slate-200"
+                        >
+                          <span className="w-24 font-mono text-slate-600">{point.date}</span>
+                          <div className="flex-1 bg-slate-200 rounded-full h-3 overflow-hidden">
+                            <div
+                              className="bg-blue-600 h-full rounded-full transition-all duration-300"
+                              style={{ width: `${percent}%` }}
+                            />
+                          </div>
+                          <span className="w-12 text-right font-mono font-bold text-slate-800">
+                            {point.clicks}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Recent Visits Log */}
+                <div>
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700 mb-3">
+                    Nhật ký truy cập gần nhất
+                  </h4>
+                  {statsData.recentClicks.length === 0 ? (
+                    <p className="text-xs text-slate-400 italic">Chưa có lượt nhấp nào được ghi nhận.</p>
+                  ) : (
+                    <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                      {statsData.recentClicks.map((rc, idx) => (
+                        <div
+                          key={idx}
+                          className="p-2.5 rounded-lg bg-slate-50 border border-slate-200 text-xs flex items-center justify-between gap-2"
+                        >
+                          <div className="min-w-0 flex-1 truncate">
+                            <span className="text-slate-500">Nguồn: </span>
+                            <span className="text-slate-800 font-medium">
+                              {rc.referer || "Truy cập trực tiếp"}
+                            </span>
+                          </div>
+                          <span className="text-slate-500 font-mono whitespace-nowrap text-[11px]">
+                            {new Date(rc.clickedAt).toLocaleTimeString("vi-VN")}{" "}
+                            {new Date(rc.clickedAt).toLocaleDateString("vi-VN")}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }

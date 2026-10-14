@@ -5,6 +5,13 @@ export interface CreateLinkRequest {
   expiresAt?: string | null;
 }
 
+export interface UpdateLinkRequest {
+  originalUrl: string;
+  title?: string;
+  campaign?: string;
+  isActive: boolean;
+}
+
 export interface LinkResponse {
   id: string;
   code: string;
@@ -79,11 +86,42 @@ export async function createShortLink(payload: CreateLinkRequest): Promise<LinkR
 
   if (!res.ok) {
     const errorData = await res.json().catch(() => null);
-    const detail = errorData?.detail || errorData?.title || `Lỗi yêu cầu: ${res.status}`;
+    const detail = errorData?.detail || errorData?.title || `Lỗi: ${res.status}`;
     throw new Error(detail);
   }
 
   return res.json();
+}
+
+export async function updateShortLink(code: string, payload: UpdateLinkRequest): Promise<LinkResponse> {
+  const res = await fetch(`${API_BASE_URL}/api/links/${encodeURIComponent(code)}`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => null);
+    const detail = errorData?.detail || errorData?.title || `Lỗi: ${res.status}`;
+    throw new Error(detail);
+  }
+
+  return res.json();
+}
+
+export async function deleteShortLink(code: string): Promise<boolean> {
+  const res = await fetch(`${API_BASE_URL}/api/links/${encodeURIComponent(code)}`, {
+    method: 'DELETE',
+  });
+
+  if (!res.ok) {
+    throw new Error(`Xóa link thất bại: ${res.status}`);
+  }
+
+  return true;
 }
 
 export async function getAllLinks(): Promise<LinkResponse[]> {
