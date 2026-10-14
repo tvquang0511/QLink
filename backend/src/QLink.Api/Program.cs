@@ -37,32 +37,14 @@ builder.Services.AddControllers();
 builder.Services.AddProblemDetails();
 builder.Services.AddOpenApi();
 
-// 5. Cấu hình CORS cho Next.js Frontend (Hỗ trợ Localhost, Vercel và Custom Domain)
-var allowedOrigins = builder.Configuration["ALLOWED_ORIGINS"]?
-    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries) ?? [];
-
+// 5. Cấu hình CORS (Cho phép mọi origin: localhost, Vercel, và Custom Domain như qlink.tvquang.id.vn)
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("FrontendPolicy", policy =>
     {
-        policy.SetIsOriginAllowed(origin =>
-            {
-                if (string.IsNullOrWhiteSpace(origin)) return false;
-                try
-                {
-                    var uri = new Uri(origin);
-                    if (uri.Host is "localhost" or "127.0.0.1") return true;
-                    // Tự động cho phép mọi domain Vercel deploy (qlink.vercel.app, *.vercel.app)
-                    if (uri.Host.EndsWith(".vercel.app", StringComparison.OrdinalIgnoreCase)) return true;
-                    return allowedOrigins.Contains(origin, StringComparer.OrdinalIgnoreCase);
-                }
-                catch
-                {
-                    return false;
-                }
-            })
-            .AllowAnyHeader()
-            .AllowAnyMethod();
+        policy.SetIsOriginAllowed(_ => true) // Cho phép tất cả domain gọi API mà không bị chặn
+              .AllowAnyHeader()
+              .AllowAnyMethod();
     });
 });
 
@@ -97,6 +79,7 @@ app.MapScalarApiReference(options =>
 });
 
 app.UseStatusCodePages();
+app.UseRouting();
 app.UseCors("FrontendPolicy");
 app.UseAuthorization();
 
@@ -107,9 +90,9 @@ app.MapGet("/health", () => Results.Ok(new
     service = "QLink.Api",
     version = "1.0.0-mvp",
     timestamp = DateTime.UtcNow
-}));
+})).RequireCors("FrontendPolicy");
 
-app.MapControllers();
+app.MapControllers().RequireCors("FrontendPolicy");
 
 // 9. Lắng nghe theo PORT động của Railway nếu có
 var railwayPort = Environment.GetEnvironmentVariable("PORT");
