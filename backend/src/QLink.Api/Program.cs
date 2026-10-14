@@ -50,20 +50,56 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
-// 6. Khởi tạo Database tự động (EnsureCreated) phục vụ MVP chạy ngay lập tức
+// 6. Khởi tạo Schema và Tables tự động trên Supabase / PostgreSQL
 using (var scope = app.Services.CreateScope())
 {
     var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
     try
     {
         var db = scope.ServiceProvider.GetRequiredService<QLinkDbContext>();
-        logger.LogInformation("Checking and preparing PostgreSQL database...");
-        db.Database.EnsureCreated();
-        logger.LogInformation("Database is ready with tables 'links' and 'click_events'.");
+        logger.LogInformation("Checking and preparing PostgreSQL schema 'qlink' and tables...");
+
+        var initSql = """
+            CREATE SCHEMA IF NOT EXISTS qlink;
+
+            CREATE TABLE IF NOT EXISTS qlink.links (
+                "Id" uuid NOT NULL PRIMARY KEY,
+                "Code" varchar(16) NOT NULL,
+                "OriginalUrl" varchar(2048) NOT NULL,
+                "Title" varchar(100),
+                "Campaign" varchar(50),
+                "IsActive" boolean NOT NULL DEFAULT TRUE,
+                "ClickCount" bigint NOT NULL DEFAULT 0,
+                "CreatedAt" timestamp with time zone NOT NULL,
+                "UpdatedAt" timestamp with time zone,
+                "ExpiresAt" timestamp with time zone
+            );
+
+            CREATE UNIQUE INDEX IF NOT EXISTS "IX_links_Code" ON qlink.links ("Code");
+
+            CREATE TABLE IF NOT EXISTS qlink.click_events (
+                "Id" uuid NOT NULL PRIMARY KEY,
+                "ShortLinkId" uuid NOT NULL,
+                "ClickedAt" timestamp with time zone NOT NULL,
+                "Referer" varchar(500),
+                "UserAgent" varchar(500),
+                "IpAddress" varchar(64),
+                "CreatedAt" timestamp with time zone NOT NULL,
+                "UpdatedAt" timestamp with time zone,
+                CONSTRAINT "FK_click_events_links_ShortLinkId" FOREIGN KEY ("ShortLinkId") 
+                    REFERENCES qlink.links ("Id") ON DELETE CASCADE
+            );
+
+            CREATE INDEX IF NOT EXISTS "IX_click_events_ShortLinkId_ClickedAt" 
+                ON qlink.click_events ("ShortLinkId", "ClickedAt");
+            """;
+
+        db.Database.ExecuteSqlRaw(initSql);
+        logger.LogInformation("Database is ready with schema 'qlink', tables 'links' and 'click_events'.");
     }
     catch (Exception ex)
     {
-        logger.LogWarning(ex, "Could not connect to PostgreSQL on startup. Please verify your connection string in .env");
+        logger.LogWarning(ex, "Could not initialize PostgreSQL database. Please verify connection string: {Message}", ex.Message);
     }
 }
 
