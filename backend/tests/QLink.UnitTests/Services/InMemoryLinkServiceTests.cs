@@ -1,5 +1,6 @@
 using QLink.Api.Contracts.Requests;
 using QLink.Api.Services;
+using QLink.Api.Services.Common;
 
 namespace QLink.UnitTests.Services;
 
@@ -10,7 +11,7 @@ public class InMemoryLinkServiceTests
 
     public InMemoryLinkServiceTests()
     {
-        _sut = new InMemoryLinkService();
+        _sut = new InMemoryLinkService(new Base62CodeGenerator());
     }
 
     [Fact]
@@ -34,10 +35,11 @@ public class InMemoryLinkServiceTests
         Assert.Equal($"{BaseUrl}/{result.Code}", result.ShortUrl);
         Assert.True(result.IsActive);
         Assert.Equal(0, result.ClickCount);
+        Assert.Equal(0, result.ClicksToday);
     }
 
     [Fact]
-    public async Task GetOriginalUrlAndRecordClickAsync_ShouldIncrementClickCount()
+    public async Task RecordClickAndGetRedirectUrlAsync_ShouldIncrementClickCount()
     {
         // Arrange
         var request = new CreateLinkRequest(
@@ -46,12 +48,18 @@ public class InMemoryLinkServiceTests
         var created = await _sut.CreateAsync(request, BaseUrl);
 
         // Act
-        var originalUrl = await _sut.GetOriginalUrlAndRecordClickAsync(created.Code);
+        var originalUrl = await _sut.RecordClickAndGetRedirectUrlAsync(
+            created.Code,
+            referer: "https://google.com",
+            userAgent: "Mozilla/5.0",
+            ipAddress: "127.0.0.1"
+        );
         var fetched = await _sut.GetByCodeAsync(created.Code, BaseUrl);
 
         // Assert
         Assert.Equal(request.OriginalUrl, originalUrl);
         Assert.NotNull(fetched);
         Assert.Equal(1, fetched.ClickCount);
+        Assert.Equal(1, fetched.ClicksToday);
     }
 }

@@ -16,16 +16,19 @@ public class RedirectController : ControllerBase
     }
 
     /// <summary>
-    /// Endpoint chuyển hướng link rút gọn: GET /{code}
-    /// Trả về mã 302 Found (tạm thời) để trình duyệt không lưu vĩnh viễn cache,
-    /// cho phép hệ thống luôn ghi nhận được các lượt click tiếp theo.
+    /// Chuyển hướng 302 Found và tự động ghi nhận lượt click kèm metadata (Referer, User-Agent, IP).
     /// </summary>
     [HttpGet("{code:regex(^[a-zA-Z0-9_-]{{4,16}}$)}")]
     [ProducesResponseType(StatusCodes.Status302Found)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> RedirectLink([FromRoute] string code, CancellationToken ct)
     {
-        var targetUrl = await _linkService.GetOriginalUrlAndRecordClickAsync(code, ct);
+        var referer = Request.Headers.Referer.ToString();
+        var userAgent = Request.Headers.UserAgent.ToString();
+        var ipAddress = HttpContext.Connection.RemoteIpAddress?.ToString();
+
+        var targetUrl = await _linkService.RecordClickAndGetRedirectUrlAsync(code, referer, userAgent, ipAddress, ct);
+
         if (string.IsNullOrEmpty(targetUrl))
         {
             _logger.LogWarning("Redirect failed: Code {Code} not found or expired", code);
@@ -37,7 +40,7 @@ public class RedirectController : ControllerBase
             });
         }
 
-        _logger.LogInformation("Redirecting code {Code} to {TargetUrl}", code, targetUrl);
-        return Redirect(targetUrl); // HTTP 302 Temporary Redirect
+        _logger.LogInformation("Tracked click and redirecting {Code} to {TargetUrl}", code, targetUrl);
+        return Redirect(targetUrl); // HTTP 302 Found
     }
 }

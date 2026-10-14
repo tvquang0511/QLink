@@ -1,37 +1,68 @@
+using Microsoft.EntityFrameworkCore;
 using Scalar.AspNetCore;
+using QLink.Api.Data;
+using QLink.Api.Middlewares;
 using QLink.Api.Services;
+using QLink.Api.Services.Common;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// 1. Đăng ký Controllers & Problem Details (RFC 7807)
+// 1. Cấu hình Database & Entity Framework Core (PostgreSQL)
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
+    ?? "Host=localhost;Port=5432;Database=qlink_db;Username=qlink;Password=qlink_dev_pass;";
+
+builder.Services.AddDbContext<QLinkDbContext>(options =>
+{
+    options.UseNpgsql(connectionString);
+});
+
+// 2. Đăng ký Services & Dependency Injection (DI)
+builder.Services.AddSingleton<ICodeGenerator, Base62CodeGenerator>();
+builder.Services.AddScoped<ILinkService, LinkService>();
+builder.Services.AddScoped<IStatsService, StatsService>();
+
+// 3. Controllers, Problem Details & OpenAPI
 builder.Services.AddControllers();
 builder.Services.AddProblemDetails();
-
-// 2. Cấu hình OpenAPI documentation
 builder.Services.AddOpenApi();
 
-// 3. Cấu hình CORS để Next.js Frontend (port 3000) có thể gọi API mà không bị chặn
+// 4. Cấu hình CORS cho Next.js Frontend
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("FrontendPolicy", policy =>
     {
-        policy.WithOrigins(
-                "http://localhost:3000",
-                "http://127.0.0.1:3000"
-            )
+        policy.SetIsOriginAllowed(origin =>
+            {
+                var host = new Uri(origin).Host;
+                return host == "localhost" || host == "127.0.0.1";
+            })
             .AllowAnyHeader()
             .AllowAnyMethod();
     });
 });
 
-// 4. Đăng ký Dependency Injection (DI)
-// Giai đoạn 1: Dùng InMemoryLinkService dạng Singleton (để giữ state bộ nhớ phục vụ test)
-// Giai đoạn 2: Bạn sẽ đổi thành builder.Services.AddScoped<ILinkService, EfCoreLinkService>()
-builder.Services.AddSingleton<ILinkService, InMemoryLinkService>();
-
 var app = builder.Build();
 
-// 5. Cấu hình HTTP Request Pipeline (Middleware)
+// 5. Khởi tạo Database tự động (EnsureCreated) phục vụ MVP chạy ngay lập tức
+using (var scope = app.Services.CreateScope())
+{
+    var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+    try
+    {
+        var db = scope.ServiceProvider.GetRequiredService<QLinkDbContext>();
+        logger.LogInformation("Checking and preparing PostgreSQL database...");
+        db.Database.EnsureCreated();
+        logger.LogInformation("Database is ready with tables 'links' and 'click_events'.");
+    }
+    catch (Exception ex)
+    {
+        logger.LogWarning(ex, "Could not connect to PostgreSQL on startup. Please ensure Docker/Postgres is running.");
+    }
+}
+
+// 6. HTTP Pipeline Middlewares
+app.UseMiddleware<GlobalExceptionHandlerMiddleware>();
+
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
@@ -42,20 +73,16 @@ if (app.Environment.IsDevelopment())
     });
 }
 
-// Bật Problem Details middleware để tự động format exception chuẩn RFC 7807
 app.UseStatusCodePages();
-
-// Sử dụng CORS đã cấu hình
 app.UseCors("FrontendPolicy");
-
 app.UseAuthorization();
 
-// 6. Endpoint Health Check tiện dụng cho Docker/K8s/Frontend kiểm tra
+// 7. Health Check
 app.MapGet("/health", () => Results.Ok(new
 {
     status = "healthy",
     service = "QLink.Api",
-    version = "1.0.0",
+    version = "1.0.0-mvp",
     timestamp = DateTime.UtcNow
 }));
 

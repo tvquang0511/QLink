@@ -14,8 +14,33 @@ export interface LinkResponse {
   campaign?: string;
   isActive: boolean;
   clickCount: number;
+  clicksToday: number;
   createdAt: string;
   expiresAt?: string | null;
+}
+
+export interface DailyClickPoint {
+  date: string;
+  clicks: number;
+}
+
+export interface RecentClickEventItem {
+  clickedAt: string;
+  referer?: string;
+  userAgent?: string;
+}
+
+export interface LinkStatsResponse {
+  id: string;
+  code: string;
+  originalUrl: string;
+  shortUrl: string;
+  title?: string;
+  campaign?: string;
+  totalClicks: number;
+  clicksToday: number;
+  dailyClicks: DailyClickPoint[];
+  recentClicks: RecentClickEventItem[];
 }
 
 export interface HealthResponse {
@@ -54,7 +79,7 @@ export async function createShortLink(payload: CreateLinkRequest): Promise<LinkR
 
   if (!res.ok) {
     const errorData = await res.json().catch(() => null);
-    const detail = errorData?.detail || errorData?.title || `Request failed with status ${res.status}`;
+    const detail = errorData?.detail || errorData?.title || `Lỗi yêu cầu: ${res.status}`;
     throw new Error(detail);
   }
 
@@ -69,6 +94,19 @@ export async function getAllLinks(): Promise<LinkResponse[]> {
 
   if (!res.ok) {
     throw new Error(`Failed to fetch links: ${res.status}`);
+  }
+
+  return res.json();
+}
+
+export async function getLinkStats(code: string, days = 7): Promise<LinkStatsResponse> {
+  const res = await fetch(`${API_BASE_URL}/api/links/${encodeURIComponent(code)}/stats?days=${days}`, {
+    cache: 'no-store',
+    headers: { 'Accept': 'application/json' },
+  });
+
+  if (!res.ok) {
+    throw new Error(`Failed to fetch stats for link ${code}: ${res.status}`);
   }
 
   return res.json();

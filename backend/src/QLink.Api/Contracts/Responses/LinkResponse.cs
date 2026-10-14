@@ -1,7 +1,7 @@
 namespace QLink.Api.Contracts.Responses;
 
 /// <summary>
-/// DTO trả về thông tin link đã rút gọn cho Client/Frontend.
+/// DTO trả về thông tin link rút gọn kèm theo số lượt click tổng và số lượt click trong ngày hôm nay.
 /// </summary>
 public record LinkResponse(
     Guid Id,
@@ -12,6 +12,7 @@ public record LinkResponse(
     string? Campaign,
     bool IsActive,
     long ClickCount,
+    long ClicksToday,
     DateTime CreatedAt,
     DateTime? ExpiresAt
 );

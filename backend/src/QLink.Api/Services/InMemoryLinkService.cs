@@ -1,27 +1,31 @@
 using System.Collections.Concurrent;
-using System.Security.Cryptography;
 using QLink.Api.Contracts.Requests;
 using QLink.Api.Contracts.Responses;
 using QLink.Api.Domain.Entities;
+using QLink.Api.Services.Common;
 
 namespace QLink.Api.Services;
 
 /// <summary>
-/// Service lưu trữ tạm trên RAM (Thread-safe ConcurrentDictionary).
-/// Phục vụ cho Milestone 1: Giúp bạn tập trung học C# syntax, Controller, DI, DTOs
-/// trước khi chuyển sang cấu hình PostgreSQL và EF Core ở Milestone 2.
+/// Service lưu trữ tạm trên RAM phục vụ test/fallback khi chưa có DB.
 /// </summary>
 public class InMemoryLinkService : ILinkService
 {
     private static readonly ConcurrentDictionary<string, ShortLink> LinksByCode = new();
-    private const string Base62Chars = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+    private static readonly ConcurrentBag<ClickEvent> ClickEvents = new();
+    private readonly ICodeGenerator _codeGenerator;
+
+    public InMemoryLinkService(ICodeGenerator codeGenerator)
+    {
+        _codeGenerator = codeGenerator;
+    }
 
     public Task<LinkResponse> CreateAsync(CreateLinkRequest request, string baseUrl, CancellationToken ct = default)
     {
-        var code = GenerateShortCode(7);
+        var code = _codeGenerator.Generate(7);
         while (LinksByCode.ContainsKey(code))
         {
-            code = GenerateShortCode(7);
+            code = _codeGenerator.Generate(7);
         }
 
         var entity = new ShortLink
@@ -38,16 +42,16 @@ public class InMemoryLinkService : ILinkService
         };
 
         LinksByCode[code] = entity;
-
-        var response = ToResponse(entity, baseUrl);
-        return Task.FromResult(response);
+        return Task.FromResult(ToResponse(entity, baseUrl, 0));
     }
 
     public Task<LinkResponse?> GetByCodeAsync(string code, string baseUrl, CancellationToken ct = default)
     {
         if (LinksByCode.TryGetValue(code, out var entity) && entity.IsActive)
         {
-            return Task.FromResult<LinkResponse?>(ToResponse(entity, baseUrl));
+            var startOfToday = DateTime.UtcNow.Date;
+            var clicksToday = ClickEvents.Count(x => x.ShortLinkId == entity.Id && x.ClickedAt >= startOfToday);
+            return Task.FromResult<LinkResponse?>(ToResponse(entity, baseUrl, clicksToday));
         }
 
         return Task.FromResult<LinkResponse?>(null);
@@ -55,33 +59,52 @@ public class InMemoryLinkService : ILinkService
 
     public Task<IEnumerable<LinkResponse>> GetAllAsync(string baseUrl, CancellationToken ct = default)
     {
+        var startOfToday = DateTime.UtcNow.Date;
         var responses = LinksByCode.Values
             .Where(x => x.IsActive)
             .OrderByDescending(x => x.CreatedAt)
-            .Select(x => ToResponse(x, baseUrl));
+            .Select(x =>
+            {
+                var clicksToday = ClickEvents.Count(c => c.ShortLinkId == x.Id && c.ClickedAt >= startOfToday);
+                return ToResponse(x, baseUrl, clicksToday);
+            });
 
         return Task.FromResult(responses);
     }
 
-    public Task<string?> GetOriginalUrlAndRecordClickAsync(string code, CancellationToken ct = default)
+    public Task<string?> RecordClickAndGetRedirectUrlAsync(
+        string code,
+        string? referer,
+        string? userAgent,
+        string? ipAddress,
+        CancellationToken ct = default)
     {
         if (LinksByCode.TryGetValue(code, out var entity))
         {
             if (!entity.IsActive) return Task.FromResult<string?>(null);
             if (entity.ExpiresAt.HasValue && entity.ExpiresAt.Value < DateTime.UtcNow) return Task.FromResult<string?>(null);
 
-            // Tăng số lượt click
             lock (entity)
             {
                 entity.ClickCount++;
             }
+
+            ClickEvents.Add(new ClickEvent
+            {
+                ShortLinkId = entity.Id,
+                ClickedAt = DateTime.UtcNow,
+                Referer = referer,
+                UserAgent = userAgent,
+                IpAddress = ipAddress
+            });
+
             return Task.FromResult<string?>(entity.OriginalUrl);
         }
 
         return Task.FromResult<string?>(null);
     }
 
-    private static LinkResponse ToResponse(ShortLink entity, string baseUrl)
+    private static LinkResponse ToResponse(ShortLink entity, string baseUrl, long clicksToday)
     {
         var shortUrl = $"{baseUrl.TrimEnd('/')}/{entity.Code}";
         return new LinkResponse(
@@ -93,22 +116,9 @@ public class InMemoryLinkService : ILinkService
             entity.Campaign,
             entity.IsActive,
             entity.ClickCount,
+            clicksToday,
             entity.CreatedAt,
             entity.ExpiresAt
         );
-    }
-
-    private static string GenerateShortCode(int length)
-    {
-        Span<byte> randomBytes = stackalloc byte[length];
-        RandomNumberGenerator.Fill(randomBytes);
-
-        var chars = new char[length];
-        for (int i = 0; i < length; i++)
-        {
-            chars[i] = Base62Chars[randomBytes[i] % Base62Chars.Length];
-        }
-
-        return new string(chars);
     }
 }

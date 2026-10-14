@@ -17,21 +17,38 @@ services:
       timeout: 5s
       retries: 5
 
-  redis:
-    image: redis:7-alpine
-    container_name: qlink-redis
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: qlink-backend
     restart: unless-stopped
-    command: redis-server --appendonly yes
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Database=${POSTGRES_DB:-qlink_db};Username=${POSTGRES_USER:-qlink};Password=${POSTGRES_PASSWORD:-qlink_dev_pass};
     ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
+      - "5102:5102"
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
+      test: ["CMD-SHELL", "dotnet --version || exit 0"]
+      interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 3
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:5102
+    container_name: qlink-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "3000:3000"
 
 volumes:
   postgres_data:
-  redis_data:
