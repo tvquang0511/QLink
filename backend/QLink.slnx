@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/QLink.Api/QLink.Api.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/QLink.UnitTests/QLink.UnitTests.csproj" />
+  </Folder>
+</Solution>
