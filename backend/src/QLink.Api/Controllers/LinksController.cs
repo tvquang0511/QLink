@@ -10,12 +10,27 @@ namespace QLink.Api.Controllers;
 public class LinksController : ControllerBase
 {
     private readonly ILinkService _linkService;
+    private readonly IConfiguration _configuration;
     private readonly ILogger<LinksController> _logger;
 
-    public LinksController(ILinkService linkService, ILogger<LinksController> logger)
+    public LinksController(ILinkService linkService, IConfiguration configuration, ILogger<LinksController> logger)
     {
         _linkService = linkService;
+        _configuration = configuration;
         _logger = logger;
+    }
+
+    private string GetBaseUrl()
+    {
+        var frontendUrl = Environment.GetEnvironmentVariable("FRONTEND_URL")
+            ?? _configuration["FrontendUrl"];
+
+        if (!string.IsNullOrWhiteSpace(frontendUrl))
+        {
+            return frontendUrl.TrimEnd('/');
+        }
+
+        return $"{Request.Scheme}://{Request.Host}";
     }
 
     /// <summary>
@@ -26,11 +41,22 @@ public class LinksController : ControllerBase
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> Create([FromBody] CreateLinkRequest request, CancellationToken ct)
     {
-        var baseUrl = $"{Request.Scheme}://{Request.Host}";
-        var created = await _linkService.CreateAsync(request, baseUrl, ct);
-
-        _logger.LogInformation("Created short link {Code} for {OriginalUrl}", created.Code, created.OriginalUrl);
-        return CreatedAtAction(nameof(GetByCode), new { code = created.Code }, created);
+        var baseUrl = GetBaseUrl();
+        try
+        {
+            var created = await _linkService.CreateAsync(request, baseUrl, ct);
+            _logger.LogInformation("Created short link {Code} for {OriginalUrl}", created.Code, created.OriginalUrl);
+            return CreatedAtAction(nameof(GetByCode), new { code = created.Code }, created);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Tạo link thất bại",
+                Detail = ex.Message,
+                Status = StatusCodes.Status400BadRequest
+            });
+        }
     }
 
     /// <summary>
@@ -40,7 +66,7 @@ public class LinksController : ControllerBase
     [ProducesResponseType(typeof(IEnumerable<LinkResponse>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetAll(CancellationToken ct)
     {
-        var baseUrl = $"{Request.Scheme}://{Request.Host}";
+        var baseUrl = GetBaseUrl();
         var links = await _linkService.GetAllAsync(baseUrl, ct);
         return Ok(links);
     }
@@ -53,7 +79,7 @@ public class LinksController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetByCode([FromRoute] string code, CancellationToken ct)
     {
-        var baseUrl = $"{Request.Scheme}://{Request.Host}";
+        var baseUrl = GetBaseUrl();
         var link = await _linkService.GetByCodeAsync(code, baseUrl, ct);
         if (link is null)
         {
@@ -76,7 +102,7 @@ public class LinksController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Update([FromRoute] string code, [FromBody] UpdateLinkRequest request, CancellationToken ct)
     {
-        var baseUrl = $"{Request.Scheme}://{Request.Host}";
+        var baseUrl = GetBaseUrl();
         var updated = await _linkService.UpdateAsync(code, request, baseUrl, ct);
 
         if (updated is null)

@@ -18,8 +18,10 @@ export default function Home() {
   const [url, setUrl] = useState("");
   const [title, setTitle] = useState("");
   const [campaign, setCampaign] = useState("");
+  const [customCode, setCustomCode] = useState("");
   const [createLoading, setCreateLoading] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [bannerAlert, setBannerAlert] = useState<string | null>(null);
 
   // Links List
   const [links, setLinks] = useState<LinkResponse[]>([]);
@@ -46,6 +48,13 @@ export default function Home() {
     loading: boolean;
   }>({ ok: false, loading: true });
 
+  const getFrontendShortUrl = (code: string) => {
+    if (typeof window !== "undefined") {
+      return `${window.location.origin}/${code}`;
+    }
+    return `https://qlink.tvquang.id.vn/${code}`;
+  };
+
   const fetchHealthAndLinks = async () => {
     setBackendHealth((prev) => ({ ...prev, loading: true }));
     const health = await checkBackendHealth();
@@ -67,6 +76,19 @@ export default function Home() {
     return () => clearInterval(interval);
   }, []);
 
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const notFoundCode = params.get("notfound");
+      const error = params.get("error");
+      if (notFoundCode) {
+        setBannerAlert(`Không tìm thấy hoặc liên kết '${notFoundCode}' đã hết hạn.`);
+      } else if (error) {
+        setBannerAlert("Đã xảy ra lỗi khi chuyển hướng liên kết.");
+      }
+    }
+  }, []);
+
   // Handle Create Link
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -80,12 +102,14 @@ export default function Home() {
         originalUrl: url.trim(),
         title: title.trim() || undefined,
         campaign: campaign.trim() || undefined,
+        customCode: customCode.trim() || undefined,
       });
 
       setLinks((prev) => [newLink, ...prev]);
       setUrl("");
       setTitle("");
       setCampaign("");
+      setCustomCode("");
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Đã có lỗi xảy ra khi tạo liên kết.";
       setFormError(message);
@@ -234,6 +258,22 @@ export default function Home() {
           </p>
         </div>
 
+        {/* Banner Alert (Ví dụ khi redirect mã không tồn tại / hết hạn) */}
+        {bannerAlert && (
+          <div className="mb-6 p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-sm flex items-center justify-between">
+            <div>
+              <span className="font-semibold">Thông báo: </span>
+              {bannerAlert}
+            </div>
+            <button
+              onClick={() => setBannerAlert(null)}
+              className="text-amber-700 hover:text-amber-900 font-bold px-2 py-1 text-xs"
+            >
+              Đóng
+            </button>
+          </div>
+        )}
+
         {/* Create Link Card */}
         <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm mb-8">
           <h2 className="text-base font-bold text-slate-900 mb-4 pb-2 border-b border-slate-100">
@@ -248,39 +288,72 @@ export default function Home() {
               <input
                 type="url"
                 required
-                placeholder="https://example.com/duong-dan-can-rut-gon"
+                placeholder="https://example.com/duong-dan-dai-can-rut-gon"
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
                 className="w-full bg-slate-50 border border-slate-300 rounded-lg px-4 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
               />
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Custom Alias / Đuôi tùy chỉnh */}
               <div>
-                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
-                  Tiêu đề nhận diện (Tùy chọn)
-                </label>
-                <input
-                  type="text"
-                  placeholder="Ví dụ: Hồ sơ cá nhân, Bài đăng blog"
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-300 rounded-lg px-4 py-2 text-sm text-slate-900 placeholder-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
-                />
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider">
+                    Đuôi link tùy chỉnh (Tùy chọn)
+                  </label>
+                  <span className="text-[11px] text-slate-400">VD: fb, bio, cv</span>
+                </div>
+                <div className="flex rounded-lg border border-slate-300 bg-slate-50 focus-within:bg-white focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-transparent overflow-hidden">
+                  <span className="inline-flex items-center px-3 bg-slate-100 text-slate-600 text-xs font-mono border-r border-slate-300 select-none">
+                    {typeof window !== "undefined" ? `${window.location.host}/` : "qlink.tvquang.id.vn/"}
+                  </span>
+                  <input
+                    type="text"
+                    placeholder="fb"
+                    value={customCode}
+                    onChange={(e) => setCustomCode(e.target.value.trim().toLowerCase().replace(/[^a-z0-9_-]/g, ""))}
+                    maxLength={30}
+                    className="w-full bg-transparent px-3 py-2 text-sm text-slate-900 placeholder-slate-400 font-mono focus:outline-none"
+                  />
+                </div>
+                <p className="mt-1 text-[11px] text-slate-500">
+                  Nếu để trống, hệ thống sẽ tự sinh chuỗi 7 ký tự ngẫu nhiên.
+                </p>
               </div>
 
+              {/* Campaign / Chiến dịch */}
               <div>
-                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
-                  Chiến dịch / Nguồn (Tùy chọn)
-                </label>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider">
+                    Chiến dịch / Nguồn (Tùy chọn)
+                  </label>
+                  <span className="text-[11px] text-slate-400">UTM / Kênh</span>
+                </div>
                 <input
                   type="text"
-                  placeholder="Ví dụ: facebook, linkedin, newsletter"
+                  placeholder="Ví dụ: facebook, tiktok-bio, newsletter"
                   value={campaign}
                   onChange={(e) => setCampaign(e.target.value)}
                   className="w-full bg-slate-50 border border-slate-300 rounded-lg px-4 py-2 text-sm text-slate-900 placeholder-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
                 />
+                <p className="mt-1 text-[11px] text-slate-500">
+                  Gom nhóm các link theo kênh/chiến dịch để so sánh hiệu quả lượt click.
+                </p>
               </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
+                Tiêu đề nhận diện (Tùy chọn)
+              </label>
+              <input
+                type="text"
+                placeholder="Ví dụ: Trang cá nhân Facebook của Quang"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-300 rounded-lg px-4 py-2 text-sm text-slate-900 placeholder-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
+              />
             </div>
 
             {formError && (
@@ -326,124 +399,127 @@ export default function Home() {
             </div>
           ) : (
             <div className="bg-white border border-slate-200 rounded-xl divide-y divide-slate-100 shadow-sm overflow-hidden">
-              {links.map((item) => (
-                <div
-                  key={item.id}
-                  className="p-5 hover:bg-slate-50/70 transition-colors flex flex-col lg:flex-row lg:items-center justify-between gap-4"
-                >
-                  {/* Left Column: Link Info */}
-                  <div className="min-w-0 flex-1 space-y-1.5">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <a
-                        href={item.shortUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="font-mono text-base font-bold text-blue-600 hover:text-blue-800 hover:underline"
-                      >
-                        {item.shortUrl}
-                      </a>
+              {links.map((item) => {
+                const shortUrl = getFrontendShortUrl(item.code);
+                return (
+                  <div
+                    key={item.id}
+                    className="p-5 hover:bg-slate-50/70 transition-colors flex flex-col lg:flex-row lg:items-center justify-between gap-4"
+                  >
+                    {/* Left Column: Link Info */}
+                    <div className="min-w-0 flex-1 space-y-1.5">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <a
+                          href={shortUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="font-mono text-base font-bold text-blue-600 hover:text-blue-800 hover:underline"
+                        >
+                          {shortUrl}
+                        </a>
 
-                      <span
-                        className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${
-                          item.isActive
-                            ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                            : "bg-slate-100 text-slate-600 border border-slate-200"
-                        }`}
-                      >
-                        {item.isActive ? "Hoạt động" : "Tạm dừng"}
-                      </span>
-
-                      {item.campaign && (
-                        <span className="text-[11px] px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200 font-medium">
-                          {item.campaign}
+                        <span
+                          className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${
+                            item.isActive
+                              ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                              : "bg-slate-100 text-slate-600 border border-slate-200"
+                          }`}
+                        >
+                          {item.isActive ? "Hoạt động" : "Tạm dừng"}
                         </span>
-                      )}
 
-                      {item.title && (
-                        <span className="text-xs text-slate-600 truncate max-w-xs">
-                          {item.title}
-                        </span>
-                      )}
+                        {item.campaign && (
+                          <span className="text-[11px] px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200 font-medium">
+                            {item.campaign}
+                          </span>
+                        )}
+
+                        {item.title && (
+                          <span className="text-xs text-slate-600 truncate max-w-xs">
+                            {item.title}
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="text-xs text-slate-500 truncate font-mono">
+                        Gốc: {item.originalUrl}
+                      </div>
+
+                      <div className="text-[11px] text-slate-400">
+                        Tạo ngày {new Date(item.createdAt).toLocaleDateString("vi-VN")} lúc{" "}
+                        {new Date(item.createdAt).toLocaleTimeString("vi-VN")}
+                      </div>
                     </div>
 
-                    <div className="text-xs text-slate-500 truncate font-mono">
-                      Gốc: {item.originalUrl}
-                    </div>
+                    {/* Right Column: Click Metrics & Actions */}
+                    <div className="flex items-center gap-3 flex-wrap sm:flex-nowrap">
+                      {/* Clicks Today */}
+                      <div className="px-3 py-1.5 rounded-lg bg-emerald-50 border border-emerald-200 text-center min-w-[75px]">
+                        <div className="text-[10px] uppercase font-bold text-emerald-700 tracking-wider">
+                          Hôm nay
+                        </div>
+                        <div className="text-base font-extrabold text-emerald-800 font-mono">
+                          {item.clicksToday ?? 0}
+                        </div>
+                      </div>
 
-                    <div className="text-[11px] text-slate-400">
-                      Tạo ngày {new Date(item.createdAt).toLocaleDateString("vi-VN")} lúc{" "}
-                      {new Date(item.createdAt).toLocaleTimeString("vi-VN")}
+                      {/* Total Clicks */}
+                      <div className="px-3 py-1.5 rounded-lg bg-slate-100 border border-slate-200 text-center min-w-[75px]">
+                        <div className="text-[10px] uppercase font-bold text-slate-600 tracking-wider">
+                          Tổng cộng
+                        </div>
+                        <div className="text-base font-extrabold text-slate-900 font-mono">
+                          {item.clickCount}
+                        </div>
+                      </div>
+
+                      {/* Actions Group */}
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          onClick={() => copyToClipboard(shortUrl, item.code)}
+                          className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition ${
+                            copiedCode === item.code
+                              ? "bg-emerald-600 text-white border-emerald-600"
+                              : "bg-white hover:bg-slate-100 text-slate-700 border-slate-300"
+                          }`}
+                        >
+                          {copiedCode === item.code ? "Đã chép" : "Sao chép"}
+                        </button>
+
+                        <button
+                          onClick={() => openEditModal(item)}
+                          className="px-3 py-1.5 text-xs font-medium bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded-lg transition"
+                        >
+                          Chỉnh sửa
+                        </button>
+
+                        <button
+                          onClick={() => openStatsModal(item.code)}
+                          className="px-3 py-1.5 text-xs font-medium bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-lg transition"
+                        >
+                          Thống kê
+                        </button>
+
+                        <a
+                          href={shortUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="px-3 py-1.5 text-xs font-medium bg-slate-800 hover:bg-slate-900 text-white rounded-lg transition"
+                        >
+                          Mở link
+                        </a>
+
+                        <button
+                          onClick={() => handleDelete(item.code)}
+                          className="px-2.5 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 border border-transparent hover:border-red-200 rounded-lg transition"
+                        >
+                          Xóa
+                        </button>
+                      </div>
                     </div>
                   </div>
-
-                  {/* Right Column: Click Metrics & Actions */}
-                  <div className="flex items-center gap-3 flex-wrap sm:flex-nowrap">
-                    {/* Clicks Today */}
-                    <div className="px-3 py-1.5 rounded-lg bg-emerald-50 border border-emerald-200 text-center min-w-[75px]">
-                      <div className="text-[10px] uppercase font-bold text-emerald-700 tracking-wider">
-                        Hôm nay
-                      </div>
-                      <div className="text-base font-extrabold text-emerald-800 font-mono">
-                        {item.clicksToday ?? 0}
-                      </div>
-                    </div>
-
-                    {/* Total Clicks */}
-                    <div className="px-3 py-1.5 rounded-lg bg-slate-100 border border-slate-200 text-center min-w-[75px]">
-                      <div className="text-[10px] uppercase font-bold text-slate-600 tracking-wider">
-                        Tổng cộng
-                      </div>
-                      <div className="text-base font-extrabold text-slate-900 font-mono">
-                        {item.clickCount}
-                      </div>
-                    </div>
-
-                    {/* Actions Group */}
-                    <div className="flex items-center gap-1.5">
-                      <button
-                        onClick={() => copyToClipboard(item.shortUrl, item.code)}
-                        className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition ${
-                          copiedCode === item.code
-                            ? "bg-emerald-600 text-white border-emerald-600"
-                            : "bg-white hover:bg-slate-100 text-slate-700 border-slate-300"
-                        }`}
-                      >
-                        {copiedCode === item.code ? "Đã chép" : "Sao chép"}
-                      </button>
-
-                      <button
-                        onClick={() => openEditModal(item)}
-                        className="px-3 py-1.5 text-xs font-medium bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded-lg transition"
-                      >
-                        Chỉnh sửa
-                      </button>
-
-                      <button
-                        onClick={() => openStatsModal(item.code)}
-                        className="px-3 py-1.5 text-xs font-medium bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-lg transition"
-                      >
-                        Thống kê
-                      </button>
-
-                      <a
-                        href={item.shortUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="px-3 py-1.5 text-xs font-medium bg-slate-800 hover:bg-slate-900 text-white rounded-lg transition"
-                      >
-                        Mở link
-                      </a>
-
-                      <button
-                        onClick={() => handleDelete(item.code)}
-                        className="px-2.5 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 border border-transparent hover:border-red-200 rounded-lg transition"
-                      >
-                        Xóa
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
@@ -456,7 +532,7 @@ export default function Home() {
             <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
               <div>
                 <h3 className="font-bold text-lg text-slate-900">Chỉnh sửa liên kết</h3>
-                <span className="font-mono text-xs text-blue-600">{editingLink.shortUrl}</span>
+                <span className="font-mono text-xs text-blue-600">{getFrontendShortUrl(editingLink.code)}</span>
               </div>
               <button
                 onClick={() => setEditingLink(null)}
@@ -552,7 +628,7 @@ export default function Home() {
               <div>
                 <h3 className="font-bold text-lg text-slate-900">Báo cáo lượt nhấp chuột</h3>
                 {statsData && (
-                  <span className="font-mono text-xs text-blue-600">{statsData.shortUrl}</span>
+                  <span className="font-mono text-xs text-blue-600">{getFrontendShortUrl(statsData.code)}</span>
                 )}
               </div>
               <button

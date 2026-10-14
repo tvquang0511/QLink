@@ -62,4 +62,36 @@ public class InMemoryLinkServiceTests
         Assert.Equal(1, fetched.ClickCount);
         Assert.Equal(1, fetched.ClicksToday);
     }
+
+    [Fact]
+    public async Task CreateAsync_WithCustomCode_ShouldUseCustomCode()
+    {
+        // Arrange
+        var request = new CreateLinkRequest(
+            OriginalUrl: "https://facebook.com/tvquang0511",
+            CustomCode: "fb"
+        );
+
+        // Act
+        var result = await _sut.CreateAsync(request, BaseUrl);
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.Equal("fb", result.Code);
+        Assert.Equal($"{BaseUrl}/fb", result.ShortUrl);
+    }
+
+    [Fact]
+    public async Task CreateAsync_WithDuplicateCustomCode_ShouldThrowException()
+    {
+        // Arrange
+        var request1 = new CreateLinkRequest(OriginalUrl: "https://example.com/1", CustomCode: "portfolio");
+        var request2 = new CreateLinkRequest(OriginalUrl: "https://example.com/2", CustomCode: "portfolio");
+
+        // Act
+        await _sut.CreateAsync(request1, BaseUrl);
+
+        // Assert
+        await Assert.ThrowsAsync<InvalidOperationException>(() => _sut.CreateAsync(request2, BaseUrl));
+    }
 }

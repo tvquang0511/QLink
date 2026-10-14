@@ -23,16 +23,44 @@ public class LinkService : ILinkService
         _logger = logger;
     }
 
+    private static readonly HashSet<string> ReservedWords = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "api", "health", "scalar", "swagger", "admin", "links", "redirect",
+        "favicon.ico", "robots.txt", "sitemap.xml", "dashboard", "stats"
+    };
+
     public async Task<LinkResponse> CreateAsync(CreateLinkRequest request, string baseUrl, CancellationToken ct = default)
     {
-        string code = string.Empty;
-        var maxRetries = 3;
+        string code;
 
-        for (int i = 0; i < maxRetries; i++)
+        if (!string.IsNullOrWhiteSpace(request.CustomCode))
         {
-            code = _codeGenerator.Generate(7);
-            var exists = await _db.Links.AnyAsync(x => x.Code == code, ct);
-            if (!exists) break;
+            var custom = request.CustomCode.Trim();
+
+            if (ReservedWords.Contains(custom))
+            {
+                throw new InvalidOperationException($"Mã rút gọn '{custom}' trùng với từ khóa hệ thống. Vui lòng chọn mã khác.");
+            }
+
+            var exists = await _db.Links.AnyAsync(x => x.Code == custom, ct);
+            if (exists)
+            {
+                throw new InvalidOperationException($"Mã rút gọn '{custom}' đã được sử dụng. Vui lòng chọn mã khác.");
+            }
+
+            code = custom;
+        }
+        else
+        {
+            code = string.Empty;
+            var maxRetries = 5;
+
+            for (int i = 0; i < maxRetries; i++)
+            {
+                code = _codeGenerator.Generate(7);
+                var exists = await _db.Links.AnyAsync(x => x.Code == code, ct);
+                if (!exists) break;
+            }
         }
 
         var link = new ShortLink

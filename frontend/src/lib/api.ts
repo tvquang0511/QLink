@@ -2,6 +2,7 @@ export interface CreateLinkRequest {
   originalUrl: string;
   title?: string;
   campaign?: string;
+  customCode?: string;
   expiresAt?: string | null;
 }
 

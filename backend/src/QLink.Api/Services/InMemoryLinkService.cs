@@ -22,10 +22,23 @@ public class InMemoryLinkService : ILinkService
 
     public Task<LinkResponse> CreateAsync(CreateLinkRequest request, string baseUrl, CancellationToken ct = default)
     {
-        var code = _codeGenerator.Generate(7);
-        while (LinksByCode.ContainsKey(code))
+        string code;
+        if (!string.IsNullOrWhiteSpace(request.CustomCode))
+        {
+            var custom = request.CustomCode.Trim();
+            if (LinksByCode.ContainsKey(custom))
+            {
+                throw new InvalidOperationException($"Mã rút gọn '{custom}' đã được sử dụng. Vui lòng chọn mã khác.");
+            }
+            code = custom;
+        }
+        else
         {
             code = _codeGenerator.Generate(7);
+            while (LinksByCode.ContainsKey(code))
+            {
+                code = _codeGenerator.Generate(7);
+            }
         }
 
         var entity = new ShortLink

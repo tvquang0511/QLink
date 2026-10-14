@@ -23,7 +23,7 @@ public class RedirectController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> RedirectLink([FromRoute] string code, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(code) || code.Length < 3 || code.Length > 20)
+        if (string.IsNullOrWhiteSpace(code) || code.Length < 2 || code.Length > 30)
         {
             return NotFound(new ProblemDetails
             {
@@ -35,7 +35,8 @@ public class RedirectController : ControllerBase
 
         var referer = Request.Headers.Referer.ToString();
         var userAgent = Request.Headers.UserAgent.ToString();
-        var ipAddress = HttpContext.Connection.RemoteIpAddress?.ToString();
+        var ipAddress = Request.Headers["X-Forwarded-For"].FirstOrDefault()?.Split(',')[0].Trim()
+            ?? HttpContext.Connection.RemoteIpAddress?.ToString();
 
         var targetUrl = await _linkService.RecordClickAndGetRedirectUrlAsync(code, referer, userAgent, ipAddress, ct);
 

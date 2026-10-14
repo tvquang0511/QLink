@@ -17,5 +17,8 @@ public record CreateLinkRequest(
     [StringLength(50, ErrorMessage = "Campaign không được vượt quá 50 ký tự")]
     string? Campaign = null,
 
-    DateTime? ExpiresAt = null
+    DateTime? ExpiresAt = null,
+
+    [RegularExpression(@"^[a-zA-Z0-9_-]{2,30}$", ErrorMessage = "Đuôi link tùy chỉnh (Custom Code) chỉ được chứa chữ cái, số, gạch ngang, gạch dưới và dài từ 2 đến 30 ký tự")]
+    string? CustomCode = null
 );
