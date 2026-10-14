@@ -18,11 +18,21 @@ public class RedirectController : ControllerBase
     /// <summary>
     /// Chuyển hướng 302 Found và tự động ghi nhận lượt click kèm metadata (Referer, User-Agent, IP).
     /// </summary>
-    [HttpGet("{code:regex(^[a-zA-Z0-9_-]{{4,16}}$)}")]
+    [HttpGet("{code}")]
     [ProducesResponseType(StatusCodes.Status302Found)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> RedirectLink([FromRoute] string code, CancellationToken ct)
     {
+        if (string.IsNullOrWhiteSpace(code) || code.Length < 3 || code.Length > 20)
+        {
+            return NotFound(new ProblemDetails
+            {
+                Title = "Invalid Code",
+                Detail = "Mã rút gọn không hợp lệ.",
+                Status = StatusCodes.Status404NotFound
+            });
+        }
+
         var referer = Request.Headers.Referer.ToString();
         var userAgent = Request.Headers.UserAgent.ToString();
         var ipAddress = HttpContext.Connection.RemoteIpAddress?.ToString();

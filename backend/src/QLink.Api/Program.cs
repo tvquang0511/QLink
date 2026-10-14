@@ -14,9 +14,10 @@ LoadEnvFile(Path.Combine(Directory.GetCurrentDirectory(), "../../.env"));
 var builder = WebApplication.CreateBuilder(args);
 
 // 2. Cấu hình Database & Entity Framework Core (PostgreSQL / Supabase)
-var rawConnection = builder.Configuration.GetConnectionString("DefaultConnection")
-    ?? Environment.GetEnvironmentVariable("DIRECT_URL")
+var rawConnection = Environment.GetEnvironmentVariable("DIRECT_URL")
     ?? Environment.GetEnvironmentVariable("DATABASE_URL")
+    ?? Environment.GetEnvironmentVariable("ConnectionStrings__DefaultConnection")
+    ?? (string.IsNullOrWhiteSpace(builder.Configuration.GetConnectionString("DefaultConnection")) ? null : builder.Configuration.GetConnectionString("DefaultConnection"))
     ?? "Host=localhost;Port=5432;Database=qlink_db;Username=qlink;Password=qlink_dev_pass;";
 
 var connectionString = ParseConnectionString(rawConnection);
