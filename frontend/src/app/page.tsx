@@ -12,6 +12,7 @@ import {
   LinkStatsResponse,
   HealthResponse,
 } from "@/lib/api";
+import ClickFrequencyChart from "@/components/ClickFrequencyChart";
 
 export default function Home() {
   // Form State: Create
@@ -37,6 +38,8 @@ export default function Home() {
   const [editError, setEditError] = useState<string | null>(null);
 
   // Stats Modal State
+  const [currentStatsCode, setCurrentStatsCode] = useState<string | null>(null);
+  const [statsDays, setStatsDays] = useState(7);
   const [statsData, setStatsData] = useState<LinkStatsResponse | null>(null);
   const [statsLoading, setStatsLoading] = useState(false);
   const [statsError, setStatsError] = useState<string | null>(null);
@@ -169,13 +172,30 @@ export default function Home() {
   };
 
   // Open Stats Modal
-  const openStatsModal = async (code: string) => {
+  const openStatsModal = async (code: string, days = 7) => {
+    setCurrentStatsCode(code);
+    setStatsDays(days);
     setStatsLoading(true);
     setStatsError(null);
     setStatsData(null);
 
     try {
-      const stats = await getLinkStats(code, 7);
+      const stats = await getLinkStats(code, days);
+      setStatsData(stats);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Không thể tải số liệu thống kê.";
+      setStatsError(message);
+    } finally {
+      setStatsLoading(false);
+    }
+  };
+
+  const handleStatsDaysChange = async (newDays: number) => {
+    if (!currentStatsCode) return;
+    setStatsDays(newDays);
+    setStatsLoading(true);
+    try {
+      const stats = await getLinkStats(currentStatsCode, newDays);
       setStatsData(stats);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Không thể tải số liệu thống kê.";
@@ -407,12 +427,17 @@ export default function Home() {
                     className="p-5 hover:bg-slate-50/70 transition-colors flex flex-col lg:flex-row lg:items-center justify-between gap-4"
                   >
                     {/* Left Column: Link Info */}
-                    <div className="min-w-0 flex-1 space-y-1.5">
+                    <div
+                      onClick={() => openStatsModal(item.code)}
+                      className="min-w-0 flex-1 space-y-1.5 cursor-pointer group"
+                      title="Bấm để xem biểu đồ tần suất click"
+                    >
                       <div className="flex items-center gap-2 flex-wrap">
                         <a
                           href={shortUrl}
                           target="_blank"
                           rel="noreferrer"
+                          onClick={(e) => e.stopPropagation()}
                           className="font-mono text-base font-bold text-blue-600 hover:text-blue-800 hover:underline"
                         >
                           {shortUrl}
@@ -435,7 +460,7 @@ export default function Home() {
                         )}
 
                         {item.title && (
-                          <span className="text-xs text-slate-600 truncate max-w-xs">
+                          <span className="text-xs text-slate-600 truncate max-w-xs group-hover:text-blue-600 transition-colors">
                             {item.title}
                           </span>
                         )}
@@ -454,7 +479,11 @@ export default function Home() {
                     {/* Right Column: Click Metrics & Actions */}
                     <div className="flex items-center gap-3 flex-wrap sm:flex-nowrap">
                       {/* Clicks Today */}
-                      <div className="px-3 py-1.5 rounded-lg bg-emerald-50 border border-emerald-200 text-center min-w-[75px]">
+                      <div
+                        onClick={() => openStatsModal(item.code)}
+                        className="px-3 py-1.5 rounded-lg bg-emerald-50 border border-emerald-200 text-center min-w-[75px] cursor-pointer hover:bg-emerald-100/60 transition"
+                        title="Bấm để xem biểu đồ thống kê"
+                      >
                         <div className="text-[10px] uppercase font-bold text-emerald-700 tracking-wider">
                           Hôm nay
                         </div>
@@ -464,7 +493,11 @@ export default function Home() {
                       </div>
 
                       {/* Total Clicks */}
-                      <div className="px-3 py-1.5 rounded-lg bg-slate-100 border border-slate-200 text-center min-w-[75px]">
+                      <div
+                        onClick={() => openStatsModal(item.code)}
+                        className="px-3 py-1.5 rounded-lg bg-slate-100 border border-slate-200 text-center min-w-[75px] cursor-pointer hover:bg-slate-200/70 transition"
+                        title="Bấm để xem biểu đồ thống kê"
+                      >
                         <div className="text-[10px] uppercase font-bold text-slate-600 tracking-wider">
                           Tổng cộng
                         </div>
@@ -680,36 +713,13 @@ export default function Home() {
                   </div>
                 </div>
 
-                {/* 7-day daily breakdown */}
-                <div>
-                  <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700 mb-3">
-                    Tần suất theo ngày (7 ngày gần nhất)
-                  </h4>
-                  <div className="space-y-2">
-                    {statsData.dailyClicks.map((point) => {
-                      const maxCount = Math.max(...statsData.dailyClicks.map((d) => d.clicks), 1);
-                      const percent = Math.round((point.clicks / maxCount) * 100);
-
-                      return (
-                        <div
-                          key={point.date}
-                          className="flex items-center gap-3 text-xs bg-slate-50 p-2.5 rounded-lg border border-slate-200"
-                        >
-                          <span className="w-24 font-mono text-slate-600">{point.date}</span>
-                          <div className="flex-1 bg-slate-200 rounded-full h-3 overflow-hidden">
-                            <div
-                              className="bg-blue-600 h-full rounded-full transition-all duration-300"
-                              style={{ width: `${percent}%` }}
-                            />
-                          </div>
-                          <span className="w-12 text-right font-mono font-bold text-slate-800">
-                            {point.clicks}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
+                {/* Line Chart: Tần suất click theo thời gian */}
+                <ClickFrequencyChart
+                  data={statsData.dailyClicks}
+                  days={statsDays}
+                  onDaysChange={handleStatsDaysChange}
+                  isLoading={statsLoading}
+                />
 
                 {/* Recent Visits Log */}
                 <div>
